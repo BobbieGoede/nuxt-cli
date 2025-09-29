@@ -136,7 +136,8 @@ export default defineCommand({
     install: {
       type: 'boolean',
       default: true,
-      description: 'Skip installing dependencies',
+      description: 'Install dependencies',
+      negativeDescription: 'Skip installing dependencies',
     },
     gitInit: {
       type: 'boolean',

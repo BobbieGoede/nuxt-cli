@@ -50,7 +50,7 @@ const command = defineCommand({
     },
     fork: {
       type: 'boolean',
-      description: forkSupported ? 'Disable forked mode' : 'Enable forked mode',
+      description: 'Enable forked mode',
       negativeDescription: 'Disable forked mode',
       default: forkSupported,
       alias: ['f'],
