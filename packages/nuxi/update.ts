@@ -2,16 +2,54 @@
 // This script searches and writes to files, use at your own risk.
 // Should be in the root of nuxi package in the nuxt-cli repository.
 
-import type { Arg, ArgDef, ArgsDef, CommandDef, Resolvable } from 'citty'
+import type { Arg, ArgsDef, CommandDef, Resolvable } from 'citty'
 import fs from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import process from 'node:process'
+import consola from 'consola'
+import { colors } from 'consola/utils'
 import { commands } from './src/commands/index'
+import moduleBuilderBuild from '/Users/bobbiegoede/www/forks/nuxt-module-builder/src/commands/build'
 
-const commandsDirPath = process.env.COMMAND_DIR_PATH || ''
-if (!commandsDirPath) {
-  throw new Error('Set `COMMAND_DIR_PATH` to absolute path to nuxt docs commands directory (e.g. /home/user/nuxt/docs/3.api/4.commands).')
+// ----- Args -----
+
+export type ArgType
+  = | 'boolean'
+    | 'string'
+    | 'number'
+    | 'enum'
+    | 'positional'
+    | undefined
+
+// Args: Definition
+
+export interface _ArgDef<T extends ArgType, VT extends boolean | number | string> {
+  type?: T
+  description?: string
+  valueHint?: string
+  alias?: string | string[]
+  default?: VT
+  required?: boolean
+  options?: (string | number)[]
 }
+
+export type ArgDef
+  = | BooleanArgDef
+    | StringArgDef
+    | NumberArgDef
+    | PositionalArgDef
+    | EnumArgDef
+
+export type BooleanArgDef = Omit<_ArgDef<'boolean', boolean>, 'options'> & {
+  negativeDescription?: string
+}
+export type StringArgDef = Omit<_ArgDef<'string', string>, 'options'>
+export type NumberArgDef = Omit<_ArgDef<'number', number>, 'options'>
+export type EnumArgDef = _ArgDef<'enum', string>
+export type PositionalArgDef = Omit<
+  _ArgDef<'positional', string>,
+  'alias' | 'options'
+>
 
 // escape for markdown tables
 function escapePipe(str: string) {
@@ -71,9 +109,9 @@ function formatArgString(name: string, arg: ArgDef) {
       return name
     }
     case 'enum': {
-      if (arg.options) {
-        return `${name}=<${arg.options.join('|')}>`
-      }
+      // if (arg.options) {
+      //   return `${name}=<${arg.options.join('|')}>`
+      // }
       break
     }
     case 'string': {
@@ -85,9 +123,9 @@ function formatArgString(name: string, arg: ArgDef) {
     }
     // case "number":
     case 'positional': {
-      if (arg.default != null) {
-        return `${name}="${arg.default}"`
-      }
+      // if (arg.default != null) {
+      //   return `${name}="${arg.default}"`
+      // }
       break
     }
   }
@@ -119,10 +157,10 @@ function formatArgName(arg: Arg, negative: boolean = false) {
   ].join(', ')
 }
 
-function wrap(str: string, chars: string = '`') {
+function wrap(str: string, chars: string | string[] = '`') {
   return `${chars[0] || ''}${str}${chars[1] || chars[0] || ''}`
 }
-function wrapValue(str: string | undefined, chars?: string) {
+function wrapValue(str: string | undefined, chars?: string | string[]) {
   return str == null || str === ''
     ? ''
     : wrap(str, chars)
@@ -135,17 +173,21 @@ async function renderUsage<T extends ArgsDef = ArgsDef>(
   const cmdArgs = resolveArgs(await resolveValue(cmd.args || {}))
 
   const argLines: [string, string, string][] = []
-  const posLines: [string, string, string][] = []
+  const posLines: [string, string, string, string][] = []
   const usageArgs = { positional: [] as string[], required: [] as string[], optional: [] as string[] }
+  interface UsageParsed { name: string, alias: string[], required: boolean, type: 'positional' | string, default: string | boolean | number | undefined, options: string[] | undefined, description: string, valueHint: string | undefined }
+  const usageArgs2: UsageParsed[] = []
 
   for (const arg of cmdArgs) {
     const argName = formatArgName(arg, false)
     const argStr = formatArgString(argName, arg)
     const description = arg.description || ''
+    const defaultValue = typeof arg.default !== 'string' ? JSON.stringify(arg.default) : arg.default
 
     if (arg.type === 'positional') {
       posLines.push([
         argStr,
+        defaultValue || '',
         description,
         wrapValue(arg.valueHint, '<>'),
       ])
@@ -155,21 +197,53 @@ async function renderUsage<T extends ArgsDef = ArgsDef>(
         argName,
         isRequired ? '<>' : '[]',
       ))
+      usageArgs2.splice(usageArgs2.findIndex(x => x.type === 'positional') + 1, 0, {
+        name: arg.name,
+        alias: toArray(arg.alias),
+        type: 'positional',
+        // @ts-expect-error nuxt also uses this for other arg types
+        options: arg.options as string[] | undefined,
+        required: isRequired,
+        default: defaultValue,
+        description,
+        valueHint: arg.valueHint,
+      })
       continue
     }
-    const defaultValue = typeof arg.default !== 'string' ? JSON.stringify(arg.default) : arg.default ?? ''
     const requiredHint = arg.required === true && arg.default === undefined ? ' (required)' : ''
+    // @ts-expect-error outdated citty
+    const options = (arg.type === 'enum' && Array.isArray(arg.options) && arg.options.length > 0)
+      // ? `(${arg.options.map(v => wrap(typeof v !== 'string' ? JSON.stringify(v) : v, ['`', '`{lang="ts"}'])).join(', ')})`
+      // @ts-expect-error outdated citty
+      ? arg.options.map(v => typeof v !== 'string' ? JSON.stringify(v) : v).join(' | ')
+      : ''
     const flagUsage = []
 
-    // const booleanDefault = (arg.type === 'boolean' && arg.default === true)
-    // if (!booleanDefault) {
-    argLines.push([
-      argStr,
-      defaultValue || '',
-      description + requiredHint,
-    ])
-    flagUsage.push(argStr)
-    // }
+    usageArgs2.push({
+      name: arg.name,
+      alias: toArray(arg.alias),
+      required: arg.required === true && arg.default === undefined,
+      type: arg.type || 'boolean',
+      default: defaultValue,
+      description,
+      valueHint: arg.valueHint,
+      // @ts-expect-error outdated citty
+      options: (arg.type === 'enum' && Array.isArray(arg.options) && arg.options.length > 0)
+      // ? `(${arg.options.map(v => wrap(typeof v !== 'string' ? JSON.stringify(v) : v, ['`', '`{lang="ts"}'])).join(', ')})`
+      // @ts-expect-error outdated citty
+        ? arg.options.map(v => typeof v !== 'string' ? JSON.stringify(v) : v)
+        : [],
+    })
+
+    const booleanDefault = (arg.type === 'boolean' && arg.default === true)
+    if (!booleanDefault) {
+      argLines.push([
+        argStr,
+        defaultValue || '',
+        [description, options, requiredHint].filter(Boolean).join(' '),
+      ])
+      flagUsage.push(argStr)
+    }
 
     if (
       // @ts-expect-error nuxt also uses this for other types
@@ -181,9 +255,22 @@ async function renderUsage<T extends ArgsDef = ArgsDef>(
       argLines.push([
         negativeArgStr,
         '',
+        // arg.negativeDescription,
         // @ts-expect-error nuxt also uses this for other types
-        arg.negativeDescription,
+        [arg.negativeDescription, options].filter(Boolean).join(' '),
       ])
+
+      usageArgs2.push({
+        name: `no-${arg.name}`,
+        alias: toArray(arg.alias).map(a => `no-${a}`),
+        required: false,
+        type: arg.type || 'boolean',
+        default: undefined,
+        // @ts-expect-error nuxt also uses this for other arg types
+        description: arg.negativeDescription || '',
+        valueHint: arg.valueHint,
+        options: [],
+      })
     }
 
     usageArgs[requiredHint ? 'required' : 'optional'].push(flagUsage.join(' | '))
@@ -192,7 +279,20 @@ async function renderUsage<T extends ArgsDef = ArgsDef>(
     // }
   }
 
+  console.log(usageArgs2)
   return { posLines, argLines, usageArgs }
+}
+
+export async function customShowUsage<T extends ArgsDef = ArgsDef>(
+  cmd: CommandDef<T>,
+  parent?: CommandDef<T>,
+) {
+  try {
+    consola.log(`${await getUsage(cmd, parent)}\n`)
+  }
+  catch (error) {
+    consola.error(error)
+  }
 }
 
 /**
@@ -231,14 +331,43 @@ function formatSegment<T extends string[]>(segment: ContentSegment<T>, data: T[]
   return { name: segment.name, content: contentLines.map(x => x.join(' | ')) }
 }
 
-const argumentSegment = defineSegment<[string, string, string]>({
+const argumentSegment = defineSegment<[string, string, string, string]>({
   name: 'args',
   content: [],
   columns: [
     { label: 'Argument', transform: (v: string) => wrap(escapePipe(v)) },
-    { label: 'Description', transform: (v: string, data) => escapePipe(v + (data[2] ? ` (options: ${data[2]})` : '')) },
+    { label: 'Default', transform: (v: string) => {
+      const val = escapePipe(wrapValue(v))
+      if (val === '') {
+        return ''
+      }
+      return `${val}{lang="ts"}`
+    } },
+    { label: 'Description', transform: (v: string, data) => {
+      // const opts = data[3] ? ` ${data[3]}` : ''
+      return escapePipe(v + (data[3] ? ` (options: ${wrap(data[3].split('|').map(v2 => JSON.stringify(v2)).join(' | '), ['`', '`{lang="ts"}'])})` : ''))
+    } },
   ],
 })
+
+export function formatLineColumns(lines: string[][], linePrefix = '') {
+  const maxLength: number[] = []
+  for (const line of lines) {
+    for (const [i, element] of line.entries()) {
+      maxLength[i] = Math.max(maxLength[i] || 0, element.length)
+    }
+  }
+  return lines
+    .map(l =>
+      l
+        .map(
+          (c, i) =>
+            linePrefix + c[i === 0 ? 'padStart' : 'padEnd'](maxLength[i] || 0),
+        )
+        .join('  '),
+    )
+    .join('\n')
+}
 
 const optionSegment = defineSegment({
   name: 'opts',
@@ -262,12 +391,75 @@ const optionSegment = defineSegment({
   ],
 })
 
+export async function getUsage<T extends ArgsDef>(def: CommandDef<T>, parent?: CommandDef<T>) {
+  const meta = await resolveValue<Record<string, any> | undefined>(def?.meta) || {}
+  const parentMeta = await resolveValue<Record<string, any> | undefined>(parent?.meta)
+
+  let commandName = meta?.name ?? name
+  // adjust command name to include parent command name
+  if (parentMeta?.name != null) {
+    commandName = [parentMeta.name, commandName].join(' ')
+  }
+
+  // content ??= await fs.readFile(foundFile, 'utf-8')
+
+  // if (def.subCommands != null) {
+  //   for (const [subCommandName, fn] of Object.entries(def.subCommands) as [string, () => Promise<CommandDef>][]) {
+  //     const subDef = await fn()
+  //     content = await writeTemplate(subCommandName, subDef, foundFile, def, content)
+  //   }
+  //   await fs.writeFile(foundFile, content, 'utf8')
+  //   return content
+  // }
+
+  // const args = await resolveValue(def.args)
+  // if (args == null)
+  //   return content
+  const version = meta.version || parentMeta?.version
+  const usageLines = []
+  usageLines.push(
+    colors.gray(`${meta.description} (${
+      commandName
+      + (version ? ` v${version}` : '')
+    })`),
+    '',
+  )
+  const data = await renderUsage(def)
+
+  // remove options with dots as they are subcommands
+  // data.argLines = data.argLines.filter(x => !x[0]?.includes('.'))
+  data.usageArgs.required = data.usageArgs.required.filter(x => !x?.includes('.'))
+  data.usageArgs.optional = data.usageArgs.optional.filter(x => !x?.includes('.'))
+  usageLines.push(`USAGE \`${data.usageArgs.positional.join(' ')} ${data.usageArgs.required.join(' ')} ${data.usageArgs.optional.map(x => wrap(x, '[]')).join(' ')}\``)
+  usageLines.push('')
+
+  if (data.posLines.length) {
+    usageLines.push(colors.underline('ARGUMENTS'), '')
+    usageLines.push(formatLineColumns(data.posLines, '  '))
+    usageLines.push('')
+  }
+
+  if (data.argLines.length) {
+    usageLines.push(colors.underline('OPTIONS'), '')
+    console.log(data.argLines.map(x => x.map(c => wrap(c))))
+    usageLines.push(formatLineColumns(data.argLines.map(([x1, x2, x3]) => [wrapValue(x1, ['`', '`']), x3 + (x2 ? colors.gray(` (default: ${x2})`) : '')]), '  '))
+    usageLines.push('')
+  }
+
+  // console.log(data.usageArgs.optional)
+  return usageLines.filter(l => typeof l === 'string').join('\n')
+}
+
 /**
  * - finds/collects command doc files
  * - extract and format command usage
  * - write formatted usage to command doc within the marker tags
  */
 async function run() {
+  const commandsDirPath = process.env.COMMAND_DIR_PATH || ''
+  if (!commandsDirPath) {
+    throw new Error('Set `COMMAND_DIR_PATH` to absolute path to nuxt docs commands directory (e.g. /home/user/nuxt/docs/3.api/4.commands).')
+  }
   const commandDocFiles = await findCommandFiles(commandsDirPath)
 
   /**
@@ -312,11 +504,11 @@ async function run() {
     data.usageArgs.optional = data.usageArgs.optional.filter(x => !x?.includes('.'))
     // console.log(data.usageArgs.optional)
 
-    const l = [
-      name === 'init' ? 'npm create nuxt@latest' : `npx nuxt ${commandName}`,
-      data.usageArgs.positional.join(' '),
-      data.usageArgs.required.join(' '),
-    ].filter(Boolean).join(' ')
+    // const l = [
+    //   name === 'init' ? 'npm create nuxt@latest' : `npx nuxt ${commandName}`,
+    //   data.usageArgs.positional.join(' '),
+    //   data.usageArgs.required.join(' '),
+    // ].filter(Boolean).join(' ')
 
     const commandSegment = defineSegment({
       name: 'cmd',
@@ -327,16 +519,21 @@ async function run() {
           name === 'init' ? 'npm create nuxt@latest' : `npx nuxt ${commandName}`,
           data.usageArgs.positional.join(' '),
           data.usageArgs.required.join(' '),
-          data.usageArgs.optional.map(v => `[${v}]`).reduce((acc, cur, i) => {
-            if (acc.at(-1) != null && acc.at(-1).length + cur.length + 1 <= 80) {
-              acc[Math.max(0, acc.length - 1)] += (acc[Math.max(0, acc.length - 1)] ? ' ' : '') + cur
-            }
-            else {
-              acc.push(cur)
-            }
-            // console.log(acc)
-            return acc
-          }, []).join(`\n${' '.repeat(l.length + 1)}`),
+          '[OPTIONS]',
+          // data.usageArgs.optional.map(v => `[${v}]`).join(' '),
+          // data.usageArgs.optional.map(v => `[${v}]`).reduce((acc, cur) => {
+          // const cmdWrapLength = 40
+          //   const last: string | undefined = acc.at(-1)
+          //   if (last != null && last.length + cur.length + 1 <= cmdWrapLength) {
+          //     const lastIndex = Math.max(0, acc.length - 1)
+          //     acc[lastIndex] += (acc[lastIndex] ? ' ' : '') + cur
+          //   }
+          //   else {
+          //     acc.push(cur)
+          //   }
+          //   // console.log(acc)
+          //   return acc
+          // }, [] as string[]).join(`\n${' '.repeat(l.length + 1)}`),
         ].filter(Boolean).join(' '),
         '```',
       ],
@@ -359,10 +556,20 @@ async function run() {
   }
 
   const entries = Object.entries(commands)
+  // eslint-disable-next-line ts/ban-ts-comment
+  // @ts-ignore
+  entries.push(['build-module', moduleBuilderBuild])
   await Promise.all(entries.map(async ([commandName, fn]) => {
-    const def = await fn()
+    const def = await resolveValue(fn)
+    const meta = await resolveValue(def?.meta)
+    if (meta && commandName === 'build-module') {
+      meta.name = 'build-module'
+    }
     await writeTemplate(commandName, def)
   }))
 }
 
-run().then(() => { })
+if (process.argv.includes('--write')) {
+  console.log('Writing command docs...')
+  run().then(() => { })
+}

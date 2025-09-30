@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { runCommand as _runCommand, runMain as _runMain } from 'citty'
 
 import { commands } from '../../nuxi/src/commands'
+import { customShowUsage, getUsage } from '../../nuxi/update'
 import { main } from './main'
 
 globalThis.__nuxt_cli__ = globalThis.__nuxt_cli__ || {
@@ -17,7 +18,7 @@ globalThis.__nuxt_cli__ = globalThis.__nuxt_cli__ || {
   ),
 }
 
-export const runMain = () => _runMain(main)
+export const runMain = () => _runMain(main, { showUsage: customShowUsage })
 
 export async function runCommand(
   name: string,

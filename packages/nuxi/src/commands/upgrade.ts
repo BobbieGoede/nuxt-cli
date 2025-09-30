@@ -90,11 +90,11 @@ export default defineCommand({
       description: 'Force upgrade to recreate lockfile and node_modules',
     },
     channel: {
-      type: 'string',
+      type: 'enum',
       alias: 'ch',
       default: 'stable',
-      description: 'Specify a channel to install from (default: stable)',
-      valueHint: 'stable|nightly|v3|v4|v4-nightly|v3-nightly',
+      description: 'Specify a channel to install from',
+      options: ['stable', 'nightly', 'v3', 'v4', 'v4-nightly', 'v3-nightly'],
     },
   },
   async run(ctx) {

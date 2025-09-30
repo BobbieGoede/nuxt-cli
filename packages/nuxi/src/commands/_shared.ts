@@ -11,9 +11,10 @@ export const cwdArgs = {
 
 export const logLevelArgs = {
   logLevel: {
-    type: 'string',
+    type: 'enum',
     description: 'Specify build-time log level',
-    valueHint: 'silent|info|verbose',
+    // valueHint: 'silent|info|verbose',
+    options: ['silent', 'info', 'verbose'],
   },
 } as const satisfies Record<string, ArgDef>
 
@@ -44,12 +45,12 @@ export const legacyRootDirArgs = {
   // cwd falls back to rootDir's default (indirect default)
   cwd: {
     ...cwdArgs.cwd,
-    description: 'Specify the working directory, this takes precedence over ROOTDIR (default: `.`)',
+    description: 'Specify the working directory, this takes precedence over ROOTDIR',
     default: undefined,
   },
   rootDir: {
     type: 'positional',
-    description: 'Specifies the working directory (default: `.`)',
+    description: 'Specifies the working directory',
     required: false,
     default: '.',
   },

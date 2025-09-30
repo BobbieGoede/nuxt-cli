@@ -2,10 +2,11 @@ import nodeCrypto from 'node:crypto'
 import { resolve } from 'node:path'
 import process from 'node:process'
 
-import { runMain as _runMain, defineCommand } from 'citty'
+import { runMain as _runMain, defineCommand, showUsage } from 'citty'
 import { provider } from 'std-env'
 
 import { description, name, version } from '../package.json'
+import { customShowUsage, getUsage } from '../update'
 import { commands } from './commands'
 import { cwdArgs } from './commands/_shared'
 import { setupGlobalConsole } from './utils/console'
@@ -72,4 +73,29 @@ export const main = defineCommand({
   },
 })
 
-export const runMain = () => _runMain(main)
+export type Awaitable<T> = () => T | Promise<T>
+export type Resolvable<T> = T | Promise<T> | (() => T) | (() => Promise<T>)
+export function resolveValue<T>(input: Resolvable<T>): T | Promise<T> {
+  return typeof input === 'function' ? (input as any)() : input
+}
+// function customShowUsage<T extends ArgsDef = ArgsDef>(
+//   cmd: CommandDef<T>,
+//   parent?: CommandDef<T>,
+// ) {
+//   const resolved = resolveValue(cmd)
+//   const argEntries = Object.entries(resolved.args || {}) as [string, ArgDef][]
+//   const newArgs = []
+//   for (const [argName, argDef] of argEntries) {
+//     const resolvedArg = resolveValue(argDef)
+//     if (resolvedArg.type === 'boolean' && resolvedArg.negativeDescription && resolvedArg.default === true) {
+//       newArgs.push([`no-${argName}`, { ...resolvedArg, description: resolvedArg.negativeDescription, default: undefined }])
+//     }
+//     else {
+//       newArgs.push([argName, resolvedArg])
+//     }
+//   }
+
+//   const newArgObj = Object.fromEntries(newArgs)
+//   return showUsage({ ...resolved, args: newArgObj }, parent)
+// }
+export const runMain = () => _runMain(main, { showUsage: customShowUsage })
