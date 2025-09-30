@@ -430,12 +430,13 @@ export async function getUsage<T extends ArgsDef>(def: CommandDef<T>, parent?: C
   // data.argLines = data.argLines.filter(x => !x[0]?.includes('.'))
   data.usageArgs.required = data.usageArgs.required.filter(x => !x?.includes('.'))
   data.usageArgs.optional = data.usageArgs.optional.filter(x => !x?.includes('.'))
-  usageLines.push(`USAGE \`${data.usageArgs.positional.join(' ')} ${data.usageArgs.required.join(' ')} ${data.usageArgs.optional.map(x => wrap(x, '[]')).join(' ')}\``)
+  const sh = meta?.name === 'init' ? 'npm create nuxt@latest' : `npx nuxt ${commandName}`
+  usageLines.push(`${colors.underline('USAGE')} \`${sh} ${data.usageArgs.positional.join(' ')} ${data.usageArgs.required.join(' ')} ${data.usageArgs.optional.map(x => wrap(x, '[]')).join(' ')}\``)
   usageLines.push('')
 
   if (data.posLines.length) {
     usageLines.push(colors.underline('ARGUMENTS'), '')
-    usageLines.push(formatLineColumns(data.posLines, '  '))
+    usageLines.push(formatLineColumns(data.posLines.map(([x1, x2, x3, x4]) => [wrapValue(x1, ['`', '`']), x2, x3, x4]), '  '))
     usageLines.push('')
   }
 
